@@ -67,6 +67,25 @@ pub fn is_portable_mode() -> bool {
 }
 
 #[cfg(target_os = "windows")]
+const PORTABLE_WEBVIEW2_RUNTIME_DIR: &str = "WebView2Runtime";
+#[cfg(target_os = "windows")]
+const WEBVIEW2_RUNTIME_EXECUTABLE: &str = "msedgewebview2.exe";
+
+/// Fixed Version Runtime bundled with the offline portable package
+/// (`WebView2Runtime/` next to the executable). Returns `None` outside
+/// portable mode or when the folder is missing/incomplete, so installed
+/// builds keep using the system Evergreen runtime.
+#[cfg(target_os = "windows")]
+pub fn portable_webview2_runtime_dir() -> Option<PathBuf> {
+    let resolution = resolve_data_dir_with_mode(PathBuf::new());
+    let DataDirMode::Portable { exe_dir } = resolution.mode else {
+        return None;
+    };
+    let runtime_dir = exe_dir.join(PORTABLE_WEBVIEW2_RUNTIME_DIR);
+    runtime_dir.join(WEBVIEW2_RUNTIME_EXECUTABLE).is_file().then_some(runtime_dir)
+}
+
+#[cfg(target_os = "windows")]
 fn current_exe_dir() -> Option<PathBuf> {
     std::env::current_exe().ok().and_then(|path| path.parent().map(Path::to_path_buf))
 }

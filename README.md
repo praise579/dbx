@@ -339,6 +339,34 @@ flatpak install flatpark com.dbxio.dbx
 
 Updates then arrive through the regular `flatpak update`. See the [DBX page on FlatPark](https://flatpark.org/apps/com.dbxio.dbx/) for details.
 
+## Offline Portable Package (Windows x64, air-gapped)
+
+For Windows x64 machines with no internet access — and where running installers is blocked — run the **offline portable package** produced by the `Offline portable (Windows x64)` GitHub Actions workflow (dispatch it manually from your fork; no secrets required). It produces `DBX_<version>_x64-offline-portable.zip` as a workflow artifact.
+
+Extract the ZIP anywhere and double-click `DBX.exe`. No installer, no admin rights, no first-run downloads: everything the app needs travels inside the folder, and data is stored in `data/` next to the executable (portable mode), so the folder also runs from removable media.
+
+```text
+DBX_0.6.11_x64-offline-portable/
+├── DBX.exe                      # portable build (reads portable.dbx next to it)
+├── portable.dbx                 # portable-mode marker
+├── WebView2Runtime/             # bundled Fixed Version WebView2 Runtime
+├── agents-offline/
+│   └── dbx-agents-offline-kafka.zip   # Kafka agent driver + JRE import package
+├── portable-update.json
+├── LICENSE / README.md
+```
+
+Connection support offline:
+
+- **Works immediately**: MySQL, PostgreSQL, Redis, MongoDB, SQL Server, SQLite, DuckDB, Elasticsearch/OpenSearch, ClickHouse, MQTT, and other built-in pure-Rust drivers.
+- **Kafka (and other agent-driver databases)**: open the agent driver store dialog, choose **Import offline package**, and select `agents-offline/dbx-agents-offline-kafka.zip`. This installs the Kafka agent driver together with its Windows x64 JRE in one step. Other agent drivers can be packaged the same way via the in-app offline export on a connected machine.
+
+Notes:
+
+- The package disables the automatic update check (there is no update channel offline). To upgrade, extract the new package and migrate or reuse your `data/` folder.
+- `DBX.exe` is unsigned in fork builds; if the target machine blocks unsigned executables, an administrator must allowlist it.
+- If you prefer the system WebView2, delete `WebView2Runtime/` — the app then uses the Evergreen runtime installed on the machine.
+
 ## Self-Hosted (Docker)
 
 DBX provides a web version that can be deployed via Docker. The examples use

@@ -502,6 +502,21 @@ fn linux_uses_native_wayland(
     })
 }
 
+/// Offline portable package: point WebView2 at the Fixed Version Runtime
+/// shipped in `WebView2Runtime/` next to the executable, before the first
+/// webview (or version probe) is created. A value the user set explicitly
+/// always wins so they can still override the runtime location.
+#[cfg(target_os = "windows")]
+fn apply_portable_webview2_runtime() {
+    if std::env::var_os("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER").is_some_and(|value| !value.is_empty()) {
+        return;
+    }
+    if let Some(runtime_dir) = data_dir::portable_webview2_runtime_dir() {
+        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &runtime_dir);
+        eprintln!("[STARTUP] portable WebView2 runtime: {}", runtime_dir.display());
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn apply_linux_webkit_rendering_workarounds() {
     let render_devices = linux_drm_render_devices();
@@ -1403,6 +1418,8 @@ pub fn run() {
     append_startup_probe("runtime prerequisites configured");
     #[cfg(target_os = "linux")]
     apply_linux_webkit_rendering_workarounds();
+    #[cfg(target_os = "windows")]
+    apply_portable_webview2_runtime();
 
     let startup_begin = Instant::now();
 

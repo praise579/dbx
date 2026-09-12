@@ -1,0 +1,136 @@
+name: Offline portable (Windows x64)
+
+# Builds the offline "green" portable package for air-gapped Windows x64
+# machines: an unsigned DBX.exe plus a bundled Fixed Version WebView2 Runtime
+# and the Kafka agent offline import package. Requires no repository secrets —
+# run it from a fork with Actions enabled.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-offline-portable:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./ -> target"
+          shared-key: offline-portable-x86_64-pc-windows-msvc
+          add-rust-environment-hash-key: false
+          cache-on-failure: true
+
+      # --no-bundle keeps the build to the bare executable: no installers, and
+      # no updater artifacts that would demand a TAURI_SIGNING_PRIVATE_KEY.
+      - name: Build DBX executable
+        run: pnpm tauri build --no-bundle --target x86_64-pc-windows-msvc
+
+      - name: Prepare bundled WebView2 Fixed Version Runtime
+        shell: pwsh
+        run: ./.github/scripts/prepare-webview2-fixed-runtime.ps1 -RuntimeDirectory "$env:RUNNER_TEMP\webview2-runtime"
+
+      - name: Assemble Kafka agent offline import package
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check zstandard
+          python ./.github/scripts/build_agent_offline_kafka.py `
+            --output "$env:RUNNER_TEMP\dbx-agents-offline-kafka.zip" `
+            --work-dir "$env:RUNNER_TEMP\kafka-offline-build"
+
+      - name: Assemble offline portable package
+        shell: pwsh
+        run: |
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
+            Where-Object { $_.name -eq "dbx" } | Select-Object -First 1 -ExpandProperty version
+          if (!$version) { throw "Could not resolve the DBX package version" }
+          "version=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          $exePath = "target/x86_64-pc-windows-msvc/release/dbx.exe"
+          if (!(Test-Path $exePath)) { throw "Missing Windows executable: $exePath" }
+
+          $portableDir = Join-Path $env:RUNNER_TEMP "DBX_${version}_x64-offline-portable"
+          if (Test-Path $portableDir) { Remove-Item $portableDir -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
+
+          Copy-Item $exePath (Join-Path $portableDir "DBX.exe") -Force
+          Copy-Item "LICENSE" (Join-Path $portableDir "LICENSE") -Force
+          Copy-Item "README.md" (Join-Path $portableDir "README.md") -Force
+          Set-Content -Path (Join-Path $portableDir "portable.dbx") -Value "" -NoNewline
+          New-Item -ItemType Directory -Force -Path (Join-Path $portableDir "agents-offline") | Out-Null
+          Copy-Item "$env:RUNNER_TEMP\dbx-agents-offline-kafka.zip" `
+            (Join-Path $portableDir "agents-offline\dbx-agents-offline-kafka.zip") -Force
+          Copy-Item "$env:RUNNER_TEMP\webview2-runtime" (Join-Path $portableDir "WebView2Runtime") -Recurse -Force
+
+          if (!(Test-Path (Join-Path $portableDir "WebView2Runtime\msedgewebview2.exe"))) {
+            throw "Bundled WebView2 runtime is missing msedgewebview2.exe"
+          }
+
+          $manifest = [ordered]@{
+            schema_version = 1
+            version = $version
+            arch = "x64"
+            executable = "DBX.exe"
+            executable_sha256 = (Get-FileHash -LiteralPath (Join-Path $portableDir "DBX.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
+          } | ConvertTo-Json
+          Set-Content -Path (Join-Path $portableDir "portable-update.json") -Value $manifest -Encoding utf8NoBOM
+
+      # The runner already has WebView2, so this only proves the app launches
+      # with the bundled runtime selected; true air-gapped validation needs a
+      # machine without WebView2.
+      - name: Smoke test portable launch
+        shell: pwsh
+        run: |
+          $portableDir = Get-ChildItem $env:RUNNER_TEMP -Directory -Filter "DBX_*_x64-offline-portable" |
+            Select-Object -First 1
+          $proc = Start-Process -FilePath (Join-Path $portableDir.FullName "DBX.exe") -PassThru
+          Start-Sleep -Seconds 30
+          if ($proc.HasExited) {
+            throw "DBX.exe exited early with code $($proc.ExitCode)"
+          }
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "DBX.exe launched successfully from the portable directory"
+
+      - name: Package offline portable ZIP
+        shell: pwsh
+        run: |
+          $portableDir = Get-ChildItem $env:RUNNER_TEMP -Directory -Filter "DBX_*_x64-offline-portable" |
+            Select-Object -First 1
+          $zipName = "DBX_${env:version}_x64-offline-portable.zip"
+          Compress-Archive -Path (Join-Path $portableDir.FullName "*") -DestinationPath $zipName -Force
+          $sha256 = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path "$zipName.sha256" -Value "$sha256  $zipName" -Encoding ascii
+          "zip_path=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload offline portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: DBX_${{ env.version }}_x64-offline-portable
+          path: |
+            ${{ env.zip_path }}
+            ${{ env.zip_path }}.sha256
+          if-no-files-found: error
+          compression-level: 0

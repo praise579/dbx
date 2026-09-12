@@ -8,6 +8,11 @@ Evergreen Runtime but prevents DBX's Windows 7 build from reliably selecting
 its bundled WebView2 109 Fixed Runtime. Other Windows targets retain the
 upstream null-folder behavior.
 
+DBX additionally honors an explicitly set `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER`
+on every Windows target (not just the Win7 target on Windows 7 / Server 2012 R2),
+so the offline portable package can point at its bundled Fixed Version Runtime
+(`WebView2Runtime/` next to the executable) without an installer.
+
 On macOS, DBX also updates Wry's pasteboard and modifier-key APIs for
 `objc2-app-kit` 0.3.2 and removes `unsafe` blocks around methods that are now
 exposed as safe. This keeps file drag-and-drop behavior while avoiding

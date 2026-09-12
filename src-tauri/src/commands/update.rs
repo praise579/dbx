@@ -357,9 +357,24 @@ pub async fn check_for_updates(
     locale: Option<String>,
     source: Option<dbx_core::DownloadSource>,
 ) -> Result<UpdateInfo, String> {
+    let current_version = env!("CARGO_PKG_VERSION");
+    // Offline portable builds have no update channel: report "up to date"
+    // without any network call so startup never phones home or surfaces
+    // update errors on air-gapped machines. Refresh by replacing the package.
+    if crate::data_dir::is_portable_mode() {
+        return Ok(UpdateInfo {
+            current_version: current_version.to_string(),
+            latest_version: current_version.to_string(),
+            update_available: false,
+            portable_mode: true,
+            manual_update_only: true,
+            release_name: format!("DBX v{current_version}"),
+            release_url: String::new(),
+            release_notes: String::new(),
+        });
+    }
     let locale = locale.unwrap_or_else(|| "zh-CN".to_string());
     let release = dbx_core::update::fetch_latest_release(&locale, source.unwrap_or_default()).await?;
-    let current_version = env!("CARGO_PKG_VERSION");
     let mut info = dbx_core::update::build_update_info(release, current_version);
     info.portable_mode = crate::data_dir::is_portable_mode();
     info.manual_update_only = requires_manual_update(IS_WINDOWS_7_TARGET);

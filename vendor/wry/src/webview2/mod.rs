@@ -1923,11 +1923,15 @@ pub fn platform_webview_version() -> Result<String> {
 
 fn configured_browser_executable_folder() -> Option<HSTRING> {
   let folder = std::env::var_os("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER");
+  let explicit_browser_folder = folder
+    .as_deref()
+    .is_some_and(|folder| !folder.is_empty());
   let version = windows_version::OsVersion::current();
   let fixed_runtime_enabled = should_use_fixed_runtime(
     cfg!(target_vendor = "win7"),
     version.major,
     version.minor,
+    explicit_browser_folder,
   );
   browser_executable_folder_from(folder.as_deref(), fixed_runtime_enabled)
 }
@@ -2076,17 +2080,23 @@ mod tests {
 
   #[test]
   fn win7_target_uses_fixed_runtime_on_windows_7() {
-    assert!(should_use_fixed_runtime(true, 6, 1));
+    assert!(should_use_fixed_runtime(true, 6, 1, false));
   }
 
   #[test]
   fn compatibility_target_uses_fixed_runtime_on_server_2012_r2() {
-    assert!(should_use_fixed_runtime(true, 6, 3));
+    assert!(should_use_fixed_runtime(true, 6, 3, false));
   }
 
   #[test]
   fn standard_windows_target_uses_system_runtime_on_windows_7() {
-    assert!(!should_use_fixed_runtime(false, 6, 1));
+    assert!(!should_use_fixed_runtime(false, 6, 1, false));
+  }
+
+  #[test]
+  fn explicitly_configured_folder_is_honored_on_any_target() {
+    assert!(should_use_fixed_runtime(false, 10, 0, true));
+    assert!(should_use_fixed_runtime(true, 6, 1, true));
   }
 
   #[test]
@@ -2189,8 +2199,15 @@ fn is_windows_7() -> bool {
   v.major == 6 && v.minor == 1
 }
 
-fn should_use_fixed_runtime(is_win7_target: bool, os_major: u32, os_minor: u32) -> bool {
+fn should_use_fixed_runtime(
+  is_win7_target: bool,
+  os_major: u32,
+  os_minor: u32,
+  explicit_browser_folder: bool,
+) -> bool {
   // Windows 7 与 Server 2012 R2 专用离线包都必须使用随包 Runtime，
   // 避免旧系统依赖机器级 Evergreen 注册状态。
-  is_win7_target && os_major == 6 && matches!(os_minor, 1 | 3)
+  // 任何目标上显式配置了运行时目录（如便携包自带的 WebView2Runtime/）
+  // 也同样启用，供免安装的离线绿色包选择自己的 Fixed Version Runtime。
+  explicit_browser_folder || (is_win7_target && os_major == 6 && matches!(os_minor, 1 | 3))
 }
