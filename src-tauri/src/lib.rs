@@ -508,11 +508,10 @@ fn linux_uses_native_wayland(
 /// always wins so they can still override the runtime location.
 #[cfg(target_os = "windows")]
 fn apply_portable_webview2_runtime() {
-    if std::env::var_os("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER").is_some_and(|value| !value.is_empty()) {
-        return;
-    }
-    if let Some(runtime_dir) = data_dir::portable_webview2_runtime_dir() {
-        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &runtime_dir);
+    let explicit_value = std::env::var_os(data_dir::WEBVIEW2_BROWSER_EXECUTABLE_FOLDER_ENV);
+    let bundled_runtime = data_dir::portable_webview2_runtime_dir();
+    if let Some(runtime_dir) = data_dir::portable_webview2_env_override(explicit_value.as_deref(), bundled_runtime) {
+        std::env::set_var(data_dir::WEBVIEW2_BROWSER_EXECUTABLE_FOLDER_ENV, &runtime_dir);
         eprintln!("[STARTUP] portable WebView2 runtime: {}", runtime_dir.display());
     }
 }

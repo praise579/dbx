@@ -89,31 +89,6 @@ jobs:
             throw "Bundled WebView2 runtime is missing msedgewebview2.exe"
           }
 
-          $manifest = [ordered]@{
-            schema_version = 1
-            version = $version
-            arch = "x64"
-            executable = "DBX.exe"
-            executable_sha256 = (Get-FileHash -LiteralPath (Join-Path $portableDir "DBX.exe") -Algorithm SHA256).Hash.ToLowerInvariant()
-          } | ConvertTo-Json
-          Set-Content -Path (Join-Path $portableDir "portable-update.json") -Value $manifest -Encoding utf8NoBOM
-
-      # The runner already has WebView2, so this only proves the app launches
-      # with the bundled runtime selected; true air-gapped validation needs a
-      # machine without WebView2.
-      - name: Smoke test portable launch
-        shell: pwsh
-        run: |
-          $portableDir = Get-ChildItem $env:RUNNER_TEMP -Directory -Filter "DBX_*_x64-offline-portable" |
-            Select-Object -First 1
-          $proc = Start-Process -FilePath (Join-Path $portableDir.FullName "DBX.exe") -PassThru
-          Start-Sleep -Seconds 30
-          if ($proc.HasExited) {
-            throw "DBX.exe exited early with code $($proc.ExitCode)"
-          }
-          Stop-Process -Id $proc.Id -Force
-          Write-Host "DBX.exe launched successfully from the portable directory"
-
       - name: Package offline portable ZIP
         shell: pwsh
         run: |
@@ -124,6 +99,36 @@ jobs:
           $sha256 = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -Path "$zipName.sha256" -Value "$sha256  $zipName" -Encoding ascii
           "zip_path=$zipName" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # Launches the freshly expanded ZIP, so a green run proves this exact
+      # artifact starts. The runner has WebView2 preinstalled, so the
+      # air-gap scenario (no WebView2 on the machine) still needs a manual
+      # check on a real target machine.
+      - name: Smoke test packaged ZIP
+        shell: pwsh
+        run: |
+          $extractDir = Join-Path $env:RUNNER_TEMP "smoke-extract"
+          if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+          Expand-Archive -LiteralPath $env:zip_path -DestinationPath $extractDir
+
+          foreach ($relative in @(
+            "DBX.exe"
+            "portable.dbx"
+            "WebView2Runtime\msedgewebview2.exe"
+            "agents-offline\dbx-agents-offline-kafka.zip"
+          )) {
+            if (!(Test-Path (Join-Path $extractDir $relative))) {
+              throw "Package is missing $relative"
+            }
+          }
+
+          $proc = Start-Process -FilePath (Join-Path $extractDir "DBX.exe") -PassThru
+          Start-Sleep -Seconds 30
+          if ($proc.HasExited) {
+            throw "DBX.exe exited early with code $($proc.ExitCode)"
+          }
+          Stop-Process -Id $proc.Id -Force
+          Write-Host "DBX.exe launched successfully from the extracted package"
 
       - name: Upload offline portable package
         uses: actions/upload-artifact@v4

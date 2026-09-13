@@ -362,16 +362,7 @@ pub async fn check_for_updates(
     // without any network call so startup never phones home or surfaces
     // update errors on air-gapped machines. Refresh by replacing the package.
     if crate::data_dir::is_portable_mode() {
-        return Ok(UpdateInfo {
-            current_version: current_version.to_string(),
-            latest_version: current_version.to_string(),
-            update_available: false,
-            portable_mode: true,
-            manual_update_only: true,
-            release_name: format!("DBX v{current_version}"),
-            release_url: String::new(),
-            release_notes: String::new(),
-        });
+        return Ok(offline_portable_update_info(current_version));
     }
     let locale = locale.unwrap_or_else(|| "zh-CN".to_string());
     let release = dbx_core::update::fetch_latest_release(&locale, source.unwrap_or_default()).await?;
@@ -379,6 +370,21 @@ pub async fn check_for_updates(
     info.portable_mode = crate::data_dir::is_portable_mode();
     info.manual_update_only = requires_manual_update(IS_WINDOWS_7_TARGET);
     Ok(info)
+}
+
+/// The "no update channel" response for portable builds: current version
+/// reported, nothing available, all download paths gated off.
+fn offline_portable_update_info(current_version: &str) -> UpdateInfo {
+    UpdateInfo {
+        current_version: current_version.to_string(),
+        latest_version: current_version.to_string(),
+        update_available: false,
+        portable_mode: true,
+        manual_update_only: true,
+        release_name: format!("DBX v{current_version}"),
+        release_url: String::new(),
+        release_notes: String::new(),
+    }
 }
 
 fn requires_manual_update(is_windows_7_target: bool) -> bool {
@@ -951,12 +957,26 @@ fn schedule_portable_update_exit(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        requires_manual_update, tag_version, wait_for_download_step, wait_for_progressing_download,
-        DownloadCancellation, PendingUpdateState, UpdateDownloadProgressGate, UpdateDownloadSource,
-        CNB_RELEASE_DOWNLOAD_PREFIX, DOWNLOAD_CANCELED_ERROR, GITHUB_RELEASE_DOWNLOAD_PREFIX,
+        offline_portable_update_info, requires_manual_update, tag_version, wait_for_download_step,
+        wait_for_progressing_download, DownloadCancellation, PendingUpdateState, UpdateDownloadProgressGate,
+        UpdateDownloadSource, CNB_RELEASE_DOWNLOAD_PREFIX, DOWNLOAD_CANCELED_ERROR, GITHUB_RELEASE_DOWNLOAD_PREFIX,
         OFFICIAL_UPDATE_ENDPOINTS, R2_LATEST_RELEASE_DOWNLOAD_PREFIX,
     };
     use std::{future::pending, sync::Arc, time::Duration};
+
+    #[test]
+    fn offline_portable_update_info_reports_no_update_channel() {
+        let info = offline_portable_update_info("0.6.11");
+
+        assert_eq!(info.current_version, "0.6.11");
+        assert_eq!(info.latest_version, "0.6.11");
+        assert!(!info.update_available);
+        assert!(info.portable_mode);
+        assert!(info.manual_update_only);
+        assert_eq!(info.release_name, "DBX v0.6.11");
+        assert_eq!(info.release_url, "");
+        assert!(info.release_notes.is_empty());
+    }
 
     fn cached_fixture() -> super::CachedUpdate {
         super::CachedUpdate {

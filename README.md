@@ -352,7 +352,6 @@ DBX_0.6.11_x64-offline-portable/
 ├── WebView2Runtime/             # bundled Fixed Version WebView2 Runtime
 ├── agents-offline/
 │   └── dbx-agents-offline-kafka.zip   # Kafka agent driver + JRE import package
-├── portable-update.json
 ├── LICENSE / README.md
 ```
 

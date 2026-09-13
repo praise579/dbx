@@ -31,9 +31,10 @@ def ensure_dir(path):
 
 REGISTRY_URL = "https://github.com/t8y2/dbx/releases/download/agents-latest/agent-registry.json"
 PLATFORM = "windows-x64"
+DB_TYPE = "kafka"
 
 
-def fail(message: str) -> "None":
+def fail(message: str):
     raise SystemExit(f"error: {message}")
 
 
@@ -94,7 +95,6 @@ def extract_driver_jar(tar_zstd_path, work_dir):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db-type", default="kafka")
     parser.add_argument("--platform", default=PLATFORM)
     parser.add_argument("--output", required=True, help="path of the offline import zip to write")
     parser.add_argument("--work-dir", required=True)
@@ -105,23 +105,23 @@ def main():
     with open(registry_path, encoding="utf-8") as handle:
         registry = json.load(handle)
 
-    driver = registry["drivers"].get(args.db_type)
+    driver = registry["drivers"].get(DB_TYPE)
     if not driver:
-        fail(f"driver {args.db_type} is missing from the official agent registry")
+        fail(f"driver {DB_TYPE} is missing from the official agent registry")
     jar_artifact = driver.get("jar")
     if not jar_artifact:
-        fail(f"driver {args.db_type} has no jar artifact in the official agent registry")
+        fail(f"driver {DB_TYPE} has no jar artifact in the official agent registry")
     if jar_artifact.get("format") != "tar_zstd":
-        fail(f"driver {args.db_type} jar artifact is not a tar.zst bundle; this script must be extended")
+        fail(f"driver {DB_TYPE} jar artifact is not a tar.zst bundle; this script must be extended")
 
-    tar_path = fetch(jar_artifact["url"], f"{args.work_dir}/{args.db_type}-bundle.tar.zst",
+    tar_path = fetch(jar_artifact["url"], f"{args.work_dir}/{DB_TYPE}-bundle.tar.zst",
                      jar_artifact.get("sha256"), jar_artifact.get("size"))
     jar_filename, jar_path = extract_driver_jar(tar_path, args.work_dir)
     jar_sha256, jar_size = sha256_file(jar_path)
 
     jre_key = (driver.get("jre") or "").strip()
     if not jre_key:
-        fail(f"driver {args.db_type} does not declare a JRE requirement")
+        fail(f"driver {DB_TYPE} does not declare a JRE requirement")
     jre_info = (registry.get("jres") or {}).get(jre_key)
     if not jre_info:
         fail(f"JRE {jre_key} is missing from the official agent registry")
@@ -150,7 +150,7 @@ def main():
             }
         },
         "drivers": {
-            args.db_type: {
+            DB_TYPE: {
                 "version": driver["version"],
                 "label": driver["label"],
                 "min_app_version": driver["min_app_version"],

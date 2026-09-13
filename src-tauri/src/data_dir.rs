@@ -66,9 +66,11 @@ pub fn is_portable_mode() -> bool {
     resolve_data_dir_with_mode(PathBuf::new()).is_portable_mode()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
+pub const WEBVIEW2_BROWSER_EXECUTABLE_FOLDER_ENV: &str = "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER";
+#[cfg(any(target_os = "windows", test))]
 const PORTABLE_WEBVIEW2_RUNTIME_DIR: &str = "WebView2Runtime";
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
 const WEBVIEW2_RUNTIME_EXECUTABLE: &str = "msedgewebview2.exe";
 
 /// Fixed Version Runtime bundled with the offline portable package
@@ -81,8 +83,27 @@ pub fn portable_webview2_runtime_dir() -> Option<PathBuf> {
     let DataDirMode::Portable { exe_dir } = resolution.mode else {
         return None;
     };
+    portable_runtime_dir_from_exe_dir(&exe_dir, &|path| path.is_file())
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn portable_runtime_dir_from_exe_dir(exe_dir: &Path, is_file: &dyn Fn(&Path) -> bool) -> Option<PathBuf> {
     let runtime_dir = exe_dir.join(PORTABLE_WEBVIEW2_RUNTIME_DIR);
-    runtime_dir.join(WEBVIEW2_RUNTIME_EXECUTABLE).is_file().then_some(runtime_dir)
+    is_file(&runtime_dir.join(WEBVIEW2_RUNTIME_EXECUTABLE)).then_some(runtime_dir)
+}
+
+/// Precedence for the portable WebView2 override: a non-empty value set
+/// explicitly by the user (or a launcher) always wins over the bundled
+/// runtime, keeping the escape hatch available in offline packages.
+#[cfg(any(target_os = "windows", test))]
+fn portable_webview2_env_override(
+    explicit_value: Option<&std::ffi::OsStr>,
+    bundled_runtime: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if explicit_value.is_some_and(|value| !value.is_empty()) {
+        return None;
+    }
+    bundled_runtime
 }
 
 #[cfg(target_os = "windows")]
@@ -149,7 +170,7 @@ fn resolve_data_dir_from_inputs(
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use super::{alternative_data_dir, resolve_data_dir_from_inputs, DataDirMode};
 
@@ -225,5 +246,29 @@ mod tests {
             resolve_data_dir_from_inputs(default_dir, Some(exe_dir), true, false, Some(PathBuf::from(r"E:\DBXData")));
 
         assert_eq!(alternative_data_dir(&resolution), None);
+    }
+
+    #[test]
+    fn portable_runtime_dir_requires_complete_bundled_runtime() {
+        let exe_dir = PathBuf::from(r"D:\Apps\DBX");
+        let runtime_dir = exe_dir.join("WebView2Runtime");
+        let executable = runtime_dir.join("msedgewebview2.exe");
+        let complete = |path: &Path| path == executable;
+
+        assert_eq!(super::portable_runtime_dir_from_exe_dir(&exe_dir, &complete), Some(runtime_dir.clone()));
+        assert_eq!(super::portable_runtime_dir_from_exe_dir(&exe_dir, &|_| false), None);
+    }
+
+    #[test]
+    fn portable_webview2_override_prefers_explicit_value_over_bundled_runtime() {
+        let bundled = Some(PathBuf::from(r"D:\Apps\DBX\WebView2Runtime"));
+
+        assert_eq!(
+            super::portable_webview2_env_override(Some(std::ffi::OsStr::new(r"C:\Custom")), bundled.clone()),
+            None
+        );
+        assert_eq!(super::portable_webview2_env_override(Some(std::ffi::OsStr::new("")), bundled.clone()), bundled);
+        assert_eq!(super::portable_webview2_env_override(None, bundled.clone()), bundled);
+        assert_eq!(super::portable_webview2_env_override(Some(std::ffi::OsStr::new("x")), None), None);
     }
 }

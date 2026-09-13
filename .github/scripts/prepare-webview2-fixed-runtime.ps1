@@ -2,7 +2,10 @@
 param(
   [string]$RuntimeDirectory = (Join-Path $PSScriptRoot "..\..\src-tauri\webview2-fixed-runtime"),
   [string]$DownloadDirectory = $env:RUNNER_TEMP,
-  [string]$ExpectedSha256 = ""
+  # sha256 of Microsoft.WebView2.FixedVersionRuntime.133.0.3065.92.x64.cab,
+  # computed from the Microsoft-signed archive; override only when bumping
+  # $runtimeVersion below together with a freshly computed hash.
+  [string]$ExpectedSha256 = "2e2ebde332fd319f89f769628574e94230a1c715a928a5b846eeec012e811242"
 )
 
 Set-StrictMode -Version Latest
@@ -11,8 +14,8 @@ $ErrorActionPreference = "Stop"
 # Offline portable package runtime. Unlike the Win7 build (pinned to the last
 # WebView2 version supporting Windows 7), any recent Fixed Version Runtime
 # works on Windows 10/11. The download is a Microsoft-signed cab re-hosted on
-# the WebView2RuntimeArchive mirror; the Authenticode signature is the hard
-# gate, and a pinned hash can be supplied via -ExpectedSha256 when known.
+# the WebView2RuntimeArchive mirror; both the pinned hash above and the
+# Authenticode signature must check out.
 $runtimeVersion = "133.0.3065.92"
 $runtimeFolderName = "Microsoft.WebView2.FixedVersionRuntime.$runtimeVersion.x64"
 $archiveName = "$runtimeFolderName.cab"
